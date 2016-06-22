@@ -19,4 +19,4 @@ b=a[3];if(b)if(!b[2])if(i(m[5],d[1][2],g[24])){var
 e=k(b[1]);return c(h[9],e)}}break}throw j}function
 q(a){try{var
 b=[0,k(a)];return b}catch(f){f=E(f);if(f===j)return 0;throw f}}F(t[13],D,[0,g[19],g[18]],p,[0,[0,[0,[0,l[4],g[24],0]],[0,[0,[0,l[4],g[23],0]],0]],q,1]);var
-r=[0,n,o,p,j,k,q];s(18,r,"Nat_syntax_plugin.Nat_syntax");s(19,[0,r],"Nat_syntax_plugin");return}(function(){return this}()));
+r=[0,n,o,p,j,k,q];s(18,r,"Nat_syntax_plugin.Nat_syntax");s(19,[0,r],"Nat_syntax_plugin");return});

@@ -12,7 +12,7 @@ z(e,b){var
 q=f.caml_ml_string_length(b);function
 l(a){if(a===q){var
 m=n(d),r=0,s=o===m?d[1]:i===m?g(j[2],d):d;return[0,[0,e,s,r]]}var
-t=[0,l(a+1|0),0],p=n(c),u=[0,h(k[1][13],e,f.caml_string_get(b,a)),t],v=0,w=o===p?c[1]:i===p?g(j[2],c):c;return[4,e,[0,[0,e,w,v]],u]}return l(0)}function
+t=[0,l(a+1|0),0],u=f.caml_string_get(b,a),p=n(c),v=[0,h(k[1][13],e,u),t],w=0,x=o===p?c[1]:i===p?g(j[2],c):c;return[4,e,[0,[0,e,x,w]],v]}return l(0)}function
 A(a){try{var
 m=g(p[1],16),b=function(a){var
 b=a;for(;;){switch(b[0]){case
@@ -26,4 +26,4 @@ s=n(c),w=o===s?c[1]:i===s?g(j[2],c):c;if(h(u[5],r[1][2],w)){var
 t=g(k[1][15],e[1]);if(t){var
 x=g(I[1],t[1]);h(p[10],m,x);var
 b=f[1];continue}throw l}}}}break}throw l}}(a);return b}catch(f){f=P(f);if(f===l)return 0;throw f}}Q(G[14],N,[0,w,M],z,[0,[0,[0,[0,t[4],y,0]],[0,[0,[0,t[4],x,0]],0]],A,1]);var
-B=[0,v,l,m,w,q,x,y,r,c,d,z,A];C(19,B,"String_syntax_plugin.String_syntax");C(20,[0,B],"String_syntax_plugin");return}(function(){return this}()));
+B=[0,v,l,m,w,q,x,y,r,c,d,z,A];C(19,B,"String_syntax_plugin.String_syntax");C(20,[0,B],"String_syntax_plugin");return});

@@ -20,17 +20,20 @@ f(a,b){if(0===a)return 0;var
 d=f(a-1|0,b/2|0),e=0,g=0===(b%2|0)?i[29]:i[28];return[0,[0,[0,c,g,e]],d]}var
 a=F(e),g=f(8,b),h=0,j=K===a?e[1]:p===a?d(q[2],e):e;return[4,c,[0,[0,c,j,h]],g]}function
 A(a,b){if(1===G(b))var
-e=n(b,0);else{if(3===G(b))if(d(h[11],n(b,0)))if(d(h[11],n(b,1)))if(d(h[11],n(b,2)))var
+e=n(b,0);else{if(3===G(b)){var
+g=n(b,0);if(d(h[11],g)){var
+i=n(b,1);if(d(h[11],i)){var
+j=n(b,2);if(d(h[11],j))var
 e=f.caml_int_of_string(b),c=1;else
 var
-c=0;else
+c=0}else
 var
-c=0;else
+c=0}else
 var
-c=0;else
+c=0}else
 var
 c=0;if(!c)var
-g=[0,a,Y,d(M[1],X)],e=d(S[8],g)}return z(a,e)}function
+k=[0,a,Y,d(M[1],X)],e=d(S[8],k)}return z(a,e)}function
 B(a){function
 c(a,b){if(b){var
 d=b[1];if(0===d[0]){var
@@ -43,4 +46,4 @@ C(a){if(32<=a)if(!(126<a)){var
 b=d(N[17],a);return g(h[15][1],1,b)}return g(L[4],Z,a)}function
 D(a){var
 b=B(a);return g(O[15],C,b)}ab(P[14],_,[0,u,j],A,[0,[0,[0,[0,Q[4],x,0]],0],D,1]);var
-E=[0,r,m,o,s,t,j,u,v,w,x,y,e,z,A,B,C,D];H(25,E,"Ascii_syntax_plugin.Ascii_syntax");H(26,[0,E],"Ascii_syntax_plugin");return}(function(){return this}()));
+E=[0,r,m,o,s,t,j,u,v,w,x,y,e,z,A,B,C,D];H(25,E,"Ascii_syntax_plugin.Ascii_syntax");H(26,[0,E],"Ascii_syntax_plugin");return});

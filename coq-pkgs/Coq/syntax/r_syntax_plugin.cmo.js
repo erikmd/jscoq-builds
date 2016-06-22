@@ -70,4 +70,4 @@ F(a){try{var
 b=[0,E(a)];return b}catch(f){f=ab(f);if(f===n)return 0;throw f}}function
 G(a){return[0,[0,O[4],a,0]]}var
 _=[0,c(w[17][12],G,[0,s,[0,r,[0,i,[0,o,[0,g,0]]]]]),F,0];ac(N[13],aa,[0,z,$],D,_);var
-H=[0,x,n,y,h,z,l,A,U,g,r,s,i,o,m,B,C,t,u,D,v,E,F,G];I(20,H,"R_syntax_plugin.R_syntax");I(21,[0,H],"R_syntax_plugin");return}(function(){return this}()));
+H=[0,x,n,y,h,z,l,A,U,g,r,s,i,o,m,B,C,t,u,D,v,E,F,G];I(20,H,"R_syntax_plugin.R_syntax");I(21,[0,H],"R_syntax_plugin");return});
