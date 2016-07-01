@@ -37,7 +37,6 @@ class CmCoqProvider {
         }
 
         this.editor.on('change', evt => this.onCMChange(evt) );
-
         // From XQuery-CM
         CodeMirror.on(this.editor.getWrapperElement(), "mouseenter",
                       evt => this.onCMMouseEnter(this.editor, evt));

@@ -15,7 +15,7 @@ function get_svn {
 JSCOQ_DIR=~/research/jscoq/
 COQ_DIR=~/external/coq-git-32/
 MC_DIR=~/external/coq/math-comp/
-CM_DIR=${JSCOQ_DIR}/external/CodeMirror
+CM_DIR=${JSCOQ_DIR}/ui-external/CodeMirror
 FLOCQ_DIR=~/external/coq/flocq/
 CT_DIR=~/external/coq/coquelicot/
 TLC_DIR=~/external/coq/tlc/

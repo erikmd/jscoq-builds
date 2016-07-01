@@ -10,13 +10,6 @@
 // XXX: use RequireJS or something like that.
 "use strict";
 
-var COQ_LOG_LEVELS = {
-    DEBUG : 'debug',
-    INFO  : 'info',
-    WARN  : 'warn',
-    ERROR : 'error'
-};
-
 // Extra stuff... we better use jQuery.
 
 Array.prototype.last = function() { return this[this.length-1]; };
@@ -126,7 +119,6 @@ class ProviderContainer {
     }
 }
 
-
 /***********************************************************************/
 /* CoqManager coordinates the coq code objects, the panel, and the coq */
 /* js object.                                                          */
@@ -154,7 +146,7 @@ class CoqManager {
             mock:    false,
             prelude: true,
             wrapper_id: 'ide-wrapper',
-            base_path:  "./",
+            base_path:  "../",
             init_pkgs: ['init'],
             all_pkgs:  ['init', 'math-comp', 'mtac',
                         'coq-base', 'coq-arith', 'coq-reals',
@@ -192,7 +184,8 @@ class CoqManager {
 
         this.provider.onMouseEnter = stm => {
             if (stm.coq_sid) {
-                console.log("Requested goals info:", this.goals[stm.coq_sid]);
+                if(this.debug)
+                    console.log("Requested goals info:", this.goals[stm.coq_sid]);
             } else {
                 console.log("Weird, info for stm but not coq_sid", stm);
             }
@@ -202,22 +195,14 @@ class CoqManager {
             console.log("leave");
         };
 
-        this.waitForPkgs = [];
+        this.coq           = new Worker(this.options.base_path + 'coq-js/jscoq_worker.js');
+        this.coq.onmessage = evt => this.coq_handler(evt);
 
-        var coq_script = this.options.base_path +
-            (this.options.mock ? 'coq-js/jsmock' : 'coq-js/jscoq');
-
-        // Missing Promise.bind from the browsers....
-        loadJs(coq_script)().then(() => this.setupCoq());
-    }
-
-    setupCoq() {
-
-        this.coq      = jsCoq;
-
-        this.goals    = [];
+        // this.coq1           = new Worker(this.options.base_path + 'coq-js/jscoq_worker.js');
+        // this.coq1.onmessage = evt => this.coq_handler(evt);
 
         // Keybindings setup
+        // XXX: This should belong to the panel.
         document.addEventListener('keydown', evt => this.keyHandler(evt));
 
         // XXX: Depends on the layout.
@@ -225,154 +210,293 @@ class CoqManager {
             .addEventListener('click', evt => this.layout.toggle() );
 
         // XXX: Only done for the adjustWidth
+        // XXX: We should get a reflow-friendly document from Coq.
         this.layout.coq = this.coq;
 
         // Panel setup 2: packages panel.
         // XXX: In the future this may also manage the downloads.
-        this.packages = new PackageManager(this.layout.packages, this.options.base_path);
-
-        // Bind jsCoq events 1: error
-        this.coq.onError = e => {
-
-            var stm = this.sentences.pop()
-            this.provider.mark(stm, "clear");
-            this.provider.mark(stm, "error");
-            this.error = stm;
-
-            // Tell coq to go back to the old state.
-            this.sid.pop();
-            this.coq.edit(this.sid.last());
-
-        };
-
-        // Bind jsCoq events: package information
-        this.coq.onBundleInfo = bundle_info => {
-            this.packages.addBundleInfo(bundle_info);
-        };
-
-        this.coq.onBundleStart = bundle_info => {
-            this.packages.onBundleStart(bundle_info);
-        };
-
-        this.coq.onBundleLoad = bundle_info => {
-            this.packages.onBundleLoad(bundle_info);
-
-            // Reenable the IDE
-            if (this.waitForPkgs.length > 0) {
-
-                let name  = bundle_info.desc;
-                let index = this.waitForPkgs.indexOf(name);
-
-                if (index > -1) {
-                    this.waitForPkgs.splice(index, 1);
-                }
-
-                if (this.waitForPkgs.length === 0) {
-                    this.enable();
-                }
-            }
-        };
-
-        // Bind jsCoq events: package progress download.
-        this.coq.onPkgProgress = progress => {
-            this.packages.onPkgProgress(progress);
-        };
-
-        // Not used for now.
-        this.coq.onPkgLoadStart = progress => {
-            //
-        };
-
-        this.coq.onPkgLoad = progress => {
-            //
-        };
-
-        // XXX: Use a proper object...
-        this.coq.onLog = e => {
-
-            var level = COQ_LOG_LEVELS.DEBUG;
-            var msg = e.toString();
-
-            if(msg.indexOf('ErrorMsg:') != -1) {
-                level = COQ_LOG_LEVELS.ERROR;
-                msg = msg.replace(/^.*ErrorMsg:/, '');
-            }
-            // XXX: This should go away.
-            else if (msg.indexOf("pre-loading") != -1) {
-                level = COQ_LOG_LEVELS.INFO;
-                msg = msg.toString().replace(/^.*stderr:/, '');
-            }
-            else if (msg.indexOf("stderr:") != -1) {
-                level = COQ_LOG_LEVELS.WARN;
-                msg = msg.toString().replace(/^.*stderr:/, '');
-            }
-            else if (msg.indexOf("stdout:") != -1) {
-                level = COQ_LOG_LEVELS.INFO;
-                msg = msg.toString().replace(/^.*stdout:/, '');
-            }
-            else if(msg.indexOf("Msg:") != -1) {
-                level = COQ_LOG_LEVELS.INFO;
-                msg = msg.toString().replace(/^.*Msg:/, '');
-            }
-
-            else if(msg.indexOf("FileLoaded:") != -1) {
-                level = COQ_LOG_LEVELS.INFO;
-                msg = msg.toString().replace(/^.*FileLoaded: /, '');
-                msg = msg.toString().replace(/ .*/, '');
-                msg = "Loaded Module: " + msg;
-            }
-
-            // if(level != COQ_LOG_LEVELS.DEBUG) {
-            msg = msg.trim().replace(/(?:\r\n|\r|\n)/g, '<br />');
-            this.layout.log(msg, level);
-            // }
-        };
-
-        // Coq Init: At this point, the required libraries are loaded
-        // and Coq is ready to be used.
-        this.coq.onInit = e => {
-
-            // Hide the packages panel.
-            var pkg_panel = document.getElementById('packages-panel').parentNode;
-            pkg_panel.classList.add('collapsed');
-
-            // Enable the IDE.
-            this.layout.proof.textContent +=
-                "\n===> JsCoq filesystem initalized with success!\n" +
-                  "===> Loaded packages [" + this.options.init_pkgs.join(', ') + "] \n";
-
-            if (this.options.prelude) {
-
-                var prelude_command = "Require Import Coq.Init.Prelude. ";
-                var pid = this.coq.add(this.sid.last(), -1, prelude_command);
-
-                if (pid) {
-                    this.coq.commit(pid);
-                    this.sid.push(pid);
-                } else {
-                    console.log("Critical error: loading prelude");
-                }
-            }
-            this.enable();
-        };
+        this.packages = new PackageManager(this.layout.packages, this.options.base_path, this.coq);
 
         // Initial Coq state.
-        this.layout.proof.textContent =
-            this.coq.version() + "\nPlease wait for the libraries to load, thanks!"
-                               + "\nIf you have trouble try cleaning your browser's cache.";
-        this.sid = [];
+        this.coq.postMessage(["GetInfo"]);
+
+        // This is a sid-based index of processed statements.
+        this.debug       = true;
+        this.stm_id      = [];
+        this.sentences   = [];
+        this.pending_sentences   = [];
+        this.goals       = [];
+        this.waitForPkgs = [];
+        this.pqueue      = [];
 
         // Display packages panel:
         var pkg_panel = document.getElementById('packages-panel').parentNode;
         pkg_panel.classList.remove('collapsed');
         this.layout.show();
 
-        // Initialize Coq! Options must be kept in sync !
-        this.sid.push(this.coq.init(this.options));
-
-        // This is a sid-based index of processed statements.
-        this.sentences = [];
+        // Initialize pkg info.
+        let bp = '../';
+        // console.log("bp:", bp);
+        this.coq.postMessage(["InfoPkg", bp, this.options.all_pkgs]);
     }
+
+    feedProcessingIn(sid) {
+    }
+
+    feedFileDependency(sid) {
+    }
+
+    feedFileLoaded(sid, file, mod) {
+        this.layout.log(file + ' loaded succesfully.', 'Info');
+    }
+
+    feedProcessed(nsid) {
+        this.layout.proof.textContent +=
+            "\ncoq worker is ready with sid!! " + nsid.toString() +
+            "\nPlease, wait for library loading";
+
+        this.feedProcessed = this.feedProcessedReady;
+
+    }
+
+    feedProcessedReady(nsid) {
+
+        if(this.debug)
+            console.log('State processed', nsid);
+
+        // The semantics of the stm here are a bit crazy, it will send
+        // feedback for states that we don't know the id yet.
+        if (! this.stm_id[nsid] ) {
+            console.log('ready but not added?', nsid);
+            return;
+        }
+
+        var stm = this.stm_id[nsid];
+
+        this.provider.mark(stm, "clear");
+        this.provider.mark(stm, "ok");
+
+        // Get goals
+        this.coq.postMessage(["Goals"]);
+
+        // if(update_focus)
+        //     this.provider.cursorToEnd(next);
+
+    }
+
+    // Simplifier to the "rich" format coq uses.
+    flatMsg(msg) {
+
+        // Elements are ...
+        if (msg.constructor !== Array) {
+            return msg;
+        }
+
+        var ret;
+        var tag, ct, id, att, m;
+        [tag, ct] = msg;
+
+        switch (tag) {
+
+        // Element(tag_of_element, att (single string), list of xml)
+        case "Element":
+            [id, att, m] = ct;
+            let imm = m.map(this.flatMsg, this);
+            ret = "".concat(...imm);
+            break;
+
+        // PCData contains a string
+        case "PCData":
+            ret = ct;
+            break;
+
+        default:
+            ret = msg;
+        }
+        return ret;
+    }
+
+    feedMessage(sid, lvl, loc, msg) {
+
+        var fmsg = this.flatMsg(msg);
+        // Coq lvl
+        var lvl  = lvl[0];
+
+        if(this.debug)
+            console.log(sid, lvl, loc, fmsg);
+
+        // XXX: Proper levels.
+        this.layout.log(fmsg, lvl);
+
+        if (lvl === 'Error') {
+
+            let err_stm;
+
+            // Error on add or in added stm ?
+            if (sid < 0) {
+                err_stm = this.pending_sentences[0];
+                // XXX; hack
+                this.error = err_stm;
+            } else {
+                err_stm = this.sentences.last();
+            }
+            this.provider.mark(err_stm, "clear");
+            this.provider.mark(err_stm, "error");
+
+            this.pending_sentences = [];
+            this.pqueue = [];
+        }
+    }
+
+    coqFeedback(fb) {
+
+        var feed_tag = fb.contents[0];
+
+        if( this['feed'+feed_tag] ) {
+            fb.contents[0] = fb.id[1];
+            this['feed'+feed_tag].apply(this, fb.contents);
+        } else {
+            console.log('Feedback type', feed_tag, 'not handled');
+        }
+
+    }
+
+    coqAdded(nsid) {
+
+        if(this.debug)
+            console.log('adding: ', nsid);
+
+        // Added by Coq !! Try to observe:
+        let cur_stm = this.pending_sentences.shift();
+
+        this.sentences.push(cur_stm);
+        this.stm_id[nsid] = cur_stm;
+        cur_stm.coq_sid = nsid;
+
+        // XXX: Hacky hacky patching
+        if(this.pqueue.length > 0) {
+            var msg = this.pqueue.shift();
+            msg[1] = nsid;
+            this.coq.postMessage(msg);
+        // We have a target to go.
+        } else if (this.goTarget) {
+            // [Modulo the same old bugs, we need a position comparison op]
+            // We have reached the destination...
+            if (this.provider.getAtPoint()) {
+                this.coq.postMessage(['Commit', nsid]);
+            } else {
+                this.goNext(false);
+            }
+        } else {
+            this.coq.postMessage(['Commit', nsid]);
+        }
+
+    }
+
+    coqGoalInfo(sid, goals) {
+        this.goals[sid] = goals;
+
+        // XXX this doesn't work propertly
+        if (!this.pending_sentences.length)
+            this.layout.update_goals(goals);
+    }
+
+    coqLog(level, msg) {
+
+        if (this.debug) console.log(msg, level[0]);
+
+        this.layout.log(msg, level[0]);
+    }
+
+    coqLibInfo(bname, bi) {
+        this.packages.addBundleInfo(bname, bi);
+
+        // Init list processing
+        var rem_pkg = this.options.init_pkgs;
+        var idx = rem_pkg.indexOf(bname);
+        if(idx > -1) {
+            this.coq.postMessage(['LoadPkg', bname]);
+        }
+    }
+
+    coqLibProgress(evt) {
+        this.packages.onPkgProgress(evt);
+    }
+
+    coqLibLoaded(bname) {
+
+        this.packages.onBundleLoad(bname);
+
+        var rem_pkg = this.options.init_pkgs;
+        var idx = rem_pkg.indexOf(bname);
+        if(idx > -1) {
+
+            rem_pkg.splice(idx, 1);
+
+            if (rem_pkg.length === 0)
+                this.coqInit();
+        }
+    }
+
+    coqCoqExn(msg) {
+        // this.layout.log(msg, "Error");
+        console.log('coqExn', msg);
+    }
+
+    coqJsonExn(msg) {
+        // this.layout.log(msg, "Error");
+        console.log('jsonExn', msg);
+    };
+
+    coqCoqInfo(info) {
+
+        this.layout.proof.textContent =
+               info
+            + "\nPlease wait for the libraries to load, thanks!"
+            + "\nIf you have trouble try cleaning your browser's cache.\n";
+    }
+
+    // Coq Init: At this point, the required libraries are loaded
+    // and Coq is ready to be used.
+    coqInit() {
+
+        // Hide the packages panel.
+        var pkg_panel = document.getElementById('packages-panel').parentNode;
+        pkg_panel.classList.add('collapsed');
+
+        // Enable the IDE.
+        this.layout.proof.textContent +=
+            "\n===> JsCoq filesystem initalized with success!\n" +
+            "===> Loaded packages [" + this.options.init_pkgs.join(', ') + "] \n";
+
+        // XXXXXX: Critical point
+        if (this.options.prelude) {
+
+            var prelude_command = "Require Import Coq.Init.Prelude. ";
+            // this.pending_sentences.push({});
+            this.coq.postMessage(["Add", 1, -1, prelude_command]);
+        }
+        this.enable();
+    };
+
+    coq_handler(evt) {
+
+        var msg     = evt.data;
+        var msg_tag = msg[0];
+
+        if(this.debug)
+            console.log("coq_evt", msg);
+
+        // We call the corresponding coq$msg_tag(msg[1]..msg[n])
+
+        if( this['coq'+msg_tag] ) {
+            msg.shift();
+            this['coq'+msg_tag].apply(this, msg);
+        } else {
+            console.log('Message type', msg_tag, 'not handled');
+        }
+
+    };
 
     // Keyboard handling
     keyHandler(e) {
@@ -541,21 +665,20 @@ class CoqManager {
             this.error = null;
         }
 
-        var stm = this.sentences.pop()
+        var stm = this.sentences.pop();
         this.provider.mark(stm, "clear");
 
         if(!inPlace)
             this.provider.cursorToStart(stm);
 
         // Tell coq to go back to the old state.
-        let sid_old  = this.sid.pop();
-        let sid_last = this.sid.last();
-
+        let sid_old  = stm.coq_sid;
         stm.coq_sid = null;
-        this.coq.edit(sid_last);
+
+        let sid_last = this.sentences.last().coq_sid;
+        this.coq.postMessage(['EditAt', sid_last]);
 
         this.goals[sid_old]  = null;
-        this.goals[sid_last] = this.coq.goals();
         this.layout.update_goals(this.goals[sid_last]);
 
     }
@@ -563,7 +686,14 @@ class CoqManager {
     // Return if we had success.
     goNext(update_focus) {
 
-        var next = this.provider.getNext(this.sentences.last());
+        var cur_stm;
+
+        if (this.pending_sentences.length > 0)
+            cur_stm = this.pending_sentences.last();
+        else
+            cur_stm = this.sentences.last();
+
+        var next = this.provider.getNext(cur_stm);
 
         // We are the the end
         if(!next) { return false; }
@@ -587,56 +717,21 @@ class CoqManager {
         // Comment "pkg: list" will load packages.
         this.process_special(next.text);
 
-        // Two things can happen: a parsing error (thus we will never get a sid),
-        // of a succesful parse, we get a sid.
+        // XXX
+        this.pending_sentences.push(next);
+        let add_msg = ["Add", 0, -1, next.text];
 
-        // EG: For now we use a hack, parsing error returns 0
-        var nsid = this.coq.add(this.sid.last(), -1, next.text);
-
-        // Should we hook in the check add to request the commit after
-        // the parse feedback?
-        if (nsid) {
-
-            // Try to execute it.
-            this.sid.push(nsid);
-            this.sentences.push(next);
-
-            this.coq.commit(nsid);
-
-            // Commit was successful
-            if (nsid == this.sid.last()) {
-
-                this.provider.mark(next, "clear");
-                this.provider.mark(next, "ok");
-
-                // We store the coq_sid in the sentence.
-                next.coq_sid = nsid;
-
-                // Print goals
-                this.goals[nsid] = this.coq.goals();
-                this.layout.update_goals(this.goals[nsid]);
-
-                if(update_focus)
-                    this.provider.cursorToEnd(next);
-
-                return true;
-            } else {
-                // Cleanup was done in the onError handler.
-                return false;
-            }
-
-        } else { // Parse/library loading error.
-
-            this.provider.mark(next, "clear");
-            this.provider.mark(next, "error");
-            this.error = next;
-
-            // Tell coq to go back to the old state.
-            // this.sid.pop(); No need to pop as this is a parsing error!
-            // XXX: Is this edit needed?
-            this.coq.edit(this.sid.last());
-            return false;
+        if (cur_stm && cur_stm.coq_sid) {
+            add_msg[1] = cur_stm.coq_sid;
+            this.coq.postMessage(add_msg);
+        } else if (cur_stm) {
+            this.pqueue.push(add_msg);
+        } else {
+            add_msg[1] = this.options.prelude ? 2 : 1 ;
+            this.coq.postMessage(add_msg);
         }
+
+        return false;
     }
 
     // XXX Not used.
@@ -670,10 +765,8 @@ class CoqManager {
                 }
             }
         } else {
-            console.log("No cur at point! Trying a heuristic");
-            if (this.goNext(false)) {
-                setTimeout(() => { this.goCursor(); }, 50);
-            }
+            this.goTarget = true;
+            this.goNext(false);
         }
     }
 }
