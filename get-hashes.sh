@@ -14,7 +14,7 @@ function get_svn {
 
 JSCOQ_DIR=~/research/jscoq/
 COQ_DIR=~/external/coq-git-32/
-MC_DIR=~/external/coq/math-comp/
+MCOMP_DIR=~/external/coq/math-comp/
 CM_DIR=${JSCOQ_DIR}/ui-external/CodeMirror
 FLOCQ_DIR=~/external/coq/flocq/
 CT_DIR=~/external/coq/coquelicot/
@@ -42,7 +42,7 @@ get_build_name
 get_hash "coq"        $COQ_DIR
 get_hash "jscoq"      $JSCOQ_DIR
 get_hash "CodeMirror" $CM_DIR
-get_hash "math-comp"  $MC_DIR
+get_hash "math-comp"  $MCOMP_DIR
 get_hash "flocq"      $FLOCQ_DIR
 get_hash "coquelicot" $CT_DIR
 get_hash "tlc"        $TLC_DIR

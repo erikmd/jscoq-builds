@@ -10,12 +10,9 @@
 // XXX: use RequireJS or something like that.
 "use strict";
 
-// Extra stuff... we better use jQuery.
+// Extra stuff:
 
 Array.prototype.last = function() { return this[this.length-1]; };
-String.prototype.trim = function() {
-  return this.replace(/^\s+|\s+$/g, "");
-};
 
 /***********************************************************************/
 /* A Provider Container aggregates several containers, the main deal   */
@@ -221,7 +218,7 @@ class CoqManager {
         this.coq.postMessage(["GetInfo"]);
 
         // This is a sid-based index of processed statements.
-        this.debug       = true;
+        this.debug       = false;
         this.stm_id      = [];
         this.sentences   = [];
         this.pending_sentences   = [];
@@ -325,7 +322,6 @@ class CoqManager {
         if(this.debug)
             console.log(sid, lvl, loc, fmsg);
 
-        // XXX: Proper levels.
         this.layout.log(fmsg, lvl);
 
         if (lvl === 'Error') {
@@ -711,8 +707,6 @@ class CoqManager {
             this.currentFocus = next.sp;
             this.currentFocus.focus();
         }
-        // XXXX: We should be fully event driven here...
-
         // process special jscoq commands, for now:
         // Comment "pkg: list" will load packages.
         this.process_special(next.text);
@@ -732,18 +726,6 @@ class CoqManager {
         }
 
         return false;
-    }
-
-    // XXX Not used.
-    goSentence(smt) {
-
-        var idx = this.sentences.indexOf(smt);
-        if (0 <= idx) {
-            console.log("Going back to: " + idx + " " + this.sentences[idx].toString());
-            while (this.sentences.length > idx + 1) {
-                this.goPrev(false);
-            }
-        } else {}
     }
 
     goCursor() {
