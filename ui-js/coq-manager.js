@@ -102,6 +102,18 @@ class ProviderContainer {
         return this.currentFocus.getAtPoint();
     }
 
+    // Indicates if stm is after the point.
+    // XXX: Improve
+    afterPoint(stm) {
+
+        var idx_point = this.snippets.indexOf(this.currentFocus);
+        var idx_cur   = this.snippets.indexOf(stm.sp);
+
+        console.log("point vs cur", idx_point, idx_cur);
+        return (idx_point < idx_cur);
+
+    }
+
     cursorToStart(stm) {
         stm.sp.cursorToStart(stm);
     }
@@ -180,15 +192,16 @@ class CoqManager {
 
         this.provider.onMouseEnter = stm => {
             if (stm.coq_sid) {
-                if(this.debug)
+                if (this.debug)
                     console.log("Requested goals info:", this.goals[stm.coq_sid]);
             } else {
-                console.log("Weird, info for stm but not coq_sid", stm);
+                console.log("Critical: stm not added (without coq_sid)", stm);
             }
         };
 
         this.provider.onMouseLeave = stm => {
-            console.log("leave");
+            if (this.debug)
+                console.log("leave");
         };
 
         this.coq           = new Worker(this.options.base_path + 'coq-js/jscoq_worker.js');
@@ -217,7 +230,7 @@ class CoqManager {
         this.coq.postMessage(["GetInfo"]);
 
         // This is a sid-based index of processed statements.
-        this.debug       = true;
+        this.debug       = false;
 
         this.sentences   = [];
         this.stm_id      = [];
@@ -229,9 +242,9 @@ class CoqManager {
         this.waitForPkgs = [];
 
         // Init sentence.
-        var dummyProvider = { mark : function() {}, getNext: function() { return null; } };
-        this.stm_id[1]    = { text: "dummy sentence", coq_sid: 1, sp: dummyProvider };
-        this.sentences    = [this.stm_id[1]];
+        this.dummyProvider = { mark : function() {}, getNext: function() { return null; } };
+        this.stm_id[1]     = { text: "dummy sentence", coq_sid: 1, sp: this.dummyProvider };
+        this.sentences     = [this.stm_id[1]];
 
         // Display packages panel:
         var pkg_panel = document.getElementById('packages-panel').parentNode;
@@ -240,7 +253,6 @@ class CoqManager {
 
         // Initialize pkg info.
         let bp = '../';
-        // console.log("bp:", bp);
         this.coq.postMessage(["InfoPkg", bp, this.options.all_pkgs]);
     }
 
@@ -366,28 +378,44 @@ class CoqManager {
 
     }
 
+    process_pending(sid) {
+
+        var stm      = this.pending_sentences[0];
+        this.coq.postMessage(["Add", sid, -1, stm.text]);
+
+    }
+
+    add_pending(stm) {
+        if(this.pending_sentences.length) {
+            this.pending_sentences.push(stm);
+        } else {
+            var stm_last = this.sentences.last();
+
+            this.pending_sentences.push(stm);
+            this.coq.postMessage(["Add", stm_last.coq_sid, -1, stm.text]);
+        }
+    }
+
     coqAdded(nsid) {
 
         if(this.debug)
             console.log('adding: ', nsid);
 
-        // Added by Coq !! Try to observe:
+        // Added by Coq !!
         let cur_stm = this.pending_sentences.shift();
-
         this.sentences.push(cur_stm);
         this.stm_id[nsid] = cur_stm;
-        cur_stm.coq_sid = nsid;
+        cur_stm.coq_sid   = nsid;
 
-        // XXX: Hacky hacky patching
-        if(this.pqueue.length > 0) {
-            var msg = this.pqueue.shift();
-            msg[1] = nsid;
-            this.coq.postMessage(msg);
-        // We have a target to go.
+        if(this.pending_sentences.length) {
+
+            this.process_pending(nsid);
+            return;
+
         } else if (this.goTarget) {
             // [Modulo the same old bugs, we need a position comparison op]
             // We have reached the destination...
-            if (this.provider.getAtPoint()) {
+            if (this.provider.getAtPoint() || this.provider.afterPoint(cur_stm) ) {
                 this.coq.postMessage(['Commit', nsid]);
             } else {
                 this.goNext(false);
@@ -395,7 +423,6 @@ class CoqManager {
         } else {
             this.coq.postMessage(['Commit', nsid]);
         }
-
     }
 
     // Gets a list of cancelled sids.
@@ -497,9 +524,8 @@ class CoqManager {
         // XXXXXX: Critical point
         if (this.options.prelude) {
 
-            var prelude_command = "Require Import Coq.Init.Prelude. ";
-            // this.pending_sentences.push({});
-            this.coq.postMessage(["Add", 1, -1, prelude_command]);
+            var prelude_stm = { text: "Require Import Coq.Init.Prelude.", sp: this.dummyProvider };
+            this.add_pending(prelude_stm);
         }
         this.enable();
     };
@@ -578,23 +604,12 @@ class CoqManager {
             this.currentFocus = next.sp;
             this.currentFocus.focus();
         }
+
         // process special jscoq commands, for now:
         // Comment "pkg: list" will load packages.
         this.process_special(next.text);
 
-        // XXX
-        this.pending_sentences.push(next);
-        let add_msg = ["Add", 0, -1, next.text];
-
-        if (cur_stm && cur_stm.coq_sid) {
-            add_msg[1] = cur_stm.coq_sid;
-            this.coq.postMessage(add_msg);
-        } else if (cur_stm) {
-            this.pqueue.push(add_msg);
-        } else {
-            add_msg[1] = this.options.prelude ? 2 : 1 ;
-            this.coq.postMessage(add_msg);
-        }
+        this.add_pending(next);
 
         return false;
     }
