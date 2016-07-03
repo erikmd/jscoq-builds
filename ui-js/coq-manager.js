@@ -42,14 +42,14 @@ class ProviderContainer {
             cm.editor.on('focus', evt => { this.currentFocus = cm; });
 
             // Track invalidate
-            cm.onInvalidate = smt => { this.onInvalidate(smt); };
-            cm.onMouseEnter = smt => { this.onMouseEnter(smt); };
-            cm.onMouseLeave = smt => { this.onMouseLeave(smt); };
+            cm.onInvalidate = stm => { this.onInvalidate(stm); };
+            cm.onMouseEnter = stm => { this.onMouseEnter(stm); };
+            cm.onMouseLeave = stm => { this.onMouseLeave(stm); };
 
             // XXX: We use a strong assumption for now: the cursor is
             // at the invalid region, so we just do goCursor().
 
-            // however, in the future, onInvalidate should provice the
+            // However, in the future, onInvalidate should provice the
             // concrete invalid statement.
         },this);
     }
@@ -95,6 +95,13 @@ class ProviderContainer {
         stm.sp.mark(stm, mark);
     }
 
+    // Focus and movement-related operations.
+
+    // Get the point of the current focused element.
+    getAtPoint() {
+        return this.currentFocus.getAtPoint();
+    }
+
     cursorToStart(stm) {
         stm.sp.cursorToStart(stm);
     }
@@ -110,10 +117,6 @@ class ProviderContainer {
             this.snippets[0].focus();
     }
 
-    // Get the point of the current focused element.
-    getAtPoint() {
-        return this.currentFocus.getAtPoint();
-    }
 }
 
 /***********************************************************************/
@@ -172,11 +175,7 @@ class CoqManager {
                 this.error = null;
             }
 
-            setTimeout( () => {
-                this.goCursor();
-                // We must do one more back, as the one in the cursor is the invalid one!
-                this.goPrev(true);
-            }, 100);
+            this.goCursor();
         };
 
         this.provider.onMouseEnter = stm => {
@@ -218,13 +217,21 @@ class CoqManager {
         this.coq.postMessage(["GetInfo"]);
 
         // This is a sid-based index of processed statements.
-        this.debug       = false;
-        this.stm_id      = [];
+        this.debug       = true;
+
         this.sentences   = [];
-        this.pending_sentences   = [];
+        this.stm_id      = [];
         this.goals       = [];
-        this.waitForPkgs = [];
+
+        this.pending_sentences   = [];
         this.pqueue      = [];
+
+        this.waitForPkgs = [];
+
+        // Init sentence.
+        var dummyProvider = { mark : function() {}, getNext: function() { return null; } };
+        this.stm_id[1]    = { text: "dummy sentence", coq_sid: 1, sp: dummyProvider };
+        this.sentences    = [this.stm_id[1]];
 
         // Display packages panel:
         var pkg_panel = document.getElementById('packages-panel').parentNode;
@@ -237,6 +244,7 @@ class CoqManager {
         this.coq.postMessage(["InfoPkg", bp, this.options.all_pkgs]);
     }
 
+    // Feedback Processing
     feedProcessingIn(sid) {
     }
 
@@ -344,6 +352,7 @@ class CoqManager {
         }
     }
 
+    // Coq Message processing.
     coqFeedback(fb) {
 
         var feed_tag = fb.contents[0];
@@ -387,6 +396,26 @@ class CoqManager {
             this.coq.postMessage(['Commit', nsid]);
         }
 
+    }
+
+    // Gets a list of cancelled sids.
+    coqCancelled(sids) {
+
+        sids.forEach(function (sid) {
+
+            let stm_to_cancel = this.stm_id[sid];
+            let stm_idx       = this.sentences.indexOf(stm_to_cancel);
+
+            this.stm_id[sid] = null;
+            this.sentences.splice(stm_idx, 1);
+
+            this.provider.mark(stm_to_cancel, "clear");
+
+        }, this);
+
+        // Update goalsa
+
+        this.layout.update_goals(this.goals[this.sentences.last().coq_sid]);
     }
 
     coqGoalInfo(sid, goals) {
@@ -494,6 +523,128 @@ class CoqManager {
 
     };
 
+    goPrev(inPlace) {
+
+        if (this.pending_sentences.length)
+            return;
+
+            // If we didn't load the prelude, prevent unloading it to
+        // workaround a bug in Coq.
+        if (!this.options.prelude && this.sentences.length <= 1) return;
+
+        if (this.error) {
+            this.provider.mark(this.error, "clear");
+            this.error = null;
+        }
+
+        var stm      = this.sentences.last();
+
+        if(!inPlace)
+            this.provider.cursorToStart(stm);
+
+        // Tell coq to go back to the old state.
+        let sid_old  = stm.coq_sid;
+        stm.coq_sid          = null;
+        this.goals[sid_old]  = null;
+
+        this.coq.postMessage(['Cancel', sid_old]);
+    }
+
+    // Return if we had success.
+    goNext(update_focus) {
+
+        var cur_stm;
+
+        if (this.pending_sentences.length > 0)
+            cur_stm = this.pending_sentences.last();
+        else
+            cur_stm = this.sentences.last();
+
+        var next = this.provider.getNext(cur_stm);
+
+        // We are the the end
+        if(!next) { return false; }
+
+        // Hack....
+        if(next.is_comment) {
+            this.provider.mark(next, "ok");
+            return true;
+        } else {
+            this.provider.mark(next, "processing");
+        }
+
+        // We focus the new snippet.
+        if(update_focus) {
+            this.currentFocus = next.sp;
+            this.currentFocus.focus();
+        }
+        // process special jscoq commands, for now:
+        // Comment "pkg: list" will load packages.
+        this.process_special(next.text);
+
+        // XXX
+        this.pending_sentences.push(next);
+        let add_msg = ["Add", 0, -1, next.text];
+
+        if (cur_stm && cur_stm.coq_sid) {
+            add_msg[1] = cur_stm.coq_sid;
+            this.coq.postMessage(add_msg);
+        } else if (cur_stm) {
+            this.pqueue.push(add_msg);
+        } else {
+            add_msg[1] = this.options.prelude ? 2 : 1 ;
+            this.coq.postMessage(add_msg);
+        }
+
+        return false;
+    }
+
+    goCursor() {
+
+        var cur = this.provider.getAtPoint();
+
+        if (cur) {
+
+            if(!cur.coq_sid) {
+                console.log("critical error, stm not registered");
+            }
+
+            this.coq.postMessage(['Cancel', cur.coq_sid]);
+
+        } else {
+            this.goTarget = true;
+            this.goNext(false);
+        }
+    }
+
+    // Drops all the state!
+    reset() {
+
+        // Not yet initialized.
+        if(!this.sid) return;
+
+        var initial_sid;
+
+        if (this.options.prelude) {
+            initial_sid = this.sid[1];
+            this.sid    = [this.sid[0], this.sid[1]];
+        } else {
+            initial_sid = this.sid[0];
+            this.sid    = [this.sid[0]];
+        }
+
+        // Reset Coq.
+        this.coq.edit(initial_sid);
+
+        // Reset out sentences
+        this.sentences.forEach(function(stm) {
+            this.provider.mark(stm, "clear");
+        }, this);
+
+        this.sentences = [];
+
+    }
+
     // Keyboard handling
     keyHandler(e) {
 
@@ -546,34 +697,6 @@ class CoqManager {
         this.layout.buttons.style.opacity = 0;
         this.layout.proof.textContent +=
                 "\n===> Waiting for Package load!\n";
-
-    }
-
-    // Drops all the state!
-    reset() {
-
-        // Not yet initialized.
-        if(!this.sid) return;
-
-        var initial_sid;
-
-        if (this.options.prelude) {
-            initial_sid = this.sid[1];
-            this.sid    = [this.sid[0], this.sid[1]];
-        } else {
-            initial_sid = this.sid[0];
-            this.sid    = [this.sid[0]];
-        }
-
-        // Reset Coq.
-        this.coq.edit(initial_sid);
-
-        // Reset out sentences
-        this.sentences.forEach(function(stm) {
-            this.provider.mark(stm, "clear");
-        }, this);
-
-        this.sentences = [];
 
     }
 
@@ -648,108 +771,6 @@ class CoqManager {
             }
         }
         return false;
-    }
-
-    goPrev(inPlace) {
-
-        // If we didn't load the prelude, prevent unloading it to
-        // workaround a bug in Coq.
-        if (!this.options.prelude && this.sentences.length <= 1) return;
-
-        if (this.error) {
-            this.provider.mark(this.error, "clear");
-            this.error = null;
-        }
-
-        var stm = this.sentences.pop();
-        this.provider.mark(stm, "clear");
-
-        if(!inPlace)
-            this.provider.cursorToStart(stm);
-
-        // Tell coq to go back to the old state.
-        let sid_old  = stm.coq_sid;
-        stm.coq_sid = null;
-
-        let sid_last = this.sentences.last().coq_sid;
-        this.coq.postMessage(['EditAt', sid_last]);
-
-        this.goals[sid_old]  = null;
-        this.layout.update_goals(this.goals[sid_last]);
-
-    }
-
-    // Return if we had success.
-    goNext(update_focus) {
-
-        var cur_stm;
-
-        if (this.pending_sentences.length > 0)
-            cur_stm = this.pending_sentences.last();
-        else
-            cur_stm = this.sentences.last();
-
-        var next = this.provider.getNext(cur_stm);
-
-        // We are the the end
-        if(!next) { return false; }
-
-        // Hack....
-        if(next.is_comment) {
-            this.provider.mark(next, "ok");
-            return true;
-        } else {
-            this.provider.mark(next, "processing");
-        }
-
-        // We focus the new snippet.
-        if(update_focus) {
-            this.currentFocus = next.sp;
-            this.currentFocus.focus();
-        }
-        // process special jscoq commands, for now:
-        // Comment "pkg: list" will load packages.
-        this.process_special(next.text);
-
-        // XXX
-        this.pending_sentences.push(next);
-        let add_msg = ["Add", 0, -1, next.text];
-
-        if (cur_stm && cur_stm.coq_sid) {
-            add_msg[1] = cur_stm.coq_sid;
-            this.coq.postMessage(add_msg);
-        } else if (cur_stm) {
-            this.pqueue.push(add_msg);
-        } else {
-            add_msg[1] = this.options.prelude ? 2 : 1 ;
-            this.coq.postMessage(add_msg);
-        }
-
-        return false;
-    }
-
-    goCursor() {
-
-        var cur = this.provider.getAtPoint();
-
-        if (cur) {
-            var idx = this.sentences.indexOf(cur);
-            if (0 <= idx) {
-                console.log("Going back to: " + idx + " " + this.sentences[idx].toString());
-                while (this.sentences.length > idx + 1) {
-                    this.goPrev(true);
-                }
-                this.layout.show();
-            } else { // We need to go next!
-                console.log("Schedule goNext!");
-                if (this.goNext(false)) {
-                    setTimeout(() => { this.goCursor(); }, 100);
-                }
-            }
-        } else {
-            this.goTarget = true;
-            this.goNext(false);
-        }
     }
 }
 

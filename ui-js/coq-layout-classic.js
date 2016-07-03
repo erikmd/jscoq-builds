@@ -74,7 +74,7 @@ class CoqLayoutClassic {
         return html;
     }
 
-    // Reference to the jsCoq object.
+    // We first initialize the providers.
     constructor(options) {
 
         // Our reference to the IDE, goal display & query buffer.

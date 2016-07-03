@@ -3,7 +3,7 @@ af="Z",ae="N",ad="positive",i=aB.jsoo_runtime,c=i.caml_new_string,ac=i.caml_regi
 a(a,b){return a.length==1?a(b):i.caml_call_gen(a,[b])}function
 d(a,b,c){return a.length==2?a(b,c):i.caml_call_gen(a,[b,c])}function
 D(a,b,c,d,e){return a.length==4?a(b,c,d,e):i.caml_call_gen(a,[b,c,d,e])}var
-f=i.caml_get_global_data(),G=c("z_syntax_plugin"),e=[0,c("Coq"),[0,c("Numbers"),[0,c("BinNums"),0]]],g=f.Globnames,b=f.Bigint,E=f.Pp,F=f.Errors,l=f.Names,B=f.Notation,h=f.Loc,ah=f.Libnames,ag=f.Util;a(f.Mltop[12],G);var
+f=i.caml_get_global_data(),G=c("z_syntax_plugin"),e=[0,c("Coq"),[0,c("Numbers"),[0,c("BinNums"),0]]],g=f.Globnames,b=f.Bigint,E=f.Pp,F=f.CErrors,l=f.Names,B=f.Notation,h=f.Loc,ah=f.Libnames,ag=f.Util;a(f.Mltop[12],G);var
 j=[248,c("Z_syntax.Non_closed_number"),i.caml_fresh_oo_id(0)],at=c('No negative numbers in type "N".'),au=c("interp_N"),am=c('Only strictly positive numbers in type "positive".'),an=c("interp_positive"),ai=c(ad),aj=c(ad),ao=c("positive_scope"),ap=c(ae),as=c(ae),av=c("N_scope"),aw=c(af),ax=c(af),aA=c("Z_scope");function
 m(b){var
 c=d(ag[17][14],l[1][5],b);return a(l[5][4],c)}function

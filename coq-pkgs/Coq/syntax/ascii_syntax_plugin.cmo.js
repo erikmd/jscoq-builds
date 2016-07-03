@@ -4,7 +4,7 @@ d(a,c){return a.length==1?a(c):b.caml_call_gen(a,[c])}function
 f(a,c,d){return a.length==2?a(c,d):b.caml_call_gen(a,[c,d])}function
 _(a,c,d,e){return a.length==3?a(c,d,e):b.caml_call_gen(a,[c,d,e])}function
 aa(a,c,d,e,f){return a.length==4?a(c,d,e,f):b.caml_call_gen(a,[c,d,e,f])}var
-a=b.caml_get_global_data(),q=c("ascii_syntax_plugin"),i=[0,c("Coq"),[0,c("Strings"),[0,c(I),0]]],g=a.Util,h=a.Coqlib,k=a.Globnames,p=a.CamlinternalLazy,j=a.Names,N=a.Option,M=a.Pervasives,K=a.Printf,L=a.Pp,R=a.Errors,Q=a.Libnames,O=a.Notation,P=a.Loc;d(a.Mltop[12],q);var
+a=b.caml_get_global_data(),q=c("ascii_syntax_plugin"),i=[0,c("Coq"),[0,c("Strings"),[0,c(I),0]]],g=a.Util,h=a.Coqlib,k=a.Globnames,p=a.CamlinternalLazy,j=a.Names,N=a.Option,M=a.Pervasives,K=a.Printf,L=a.Pp,R=a.CErrors,Q=a.Libnames,O=a.Notation,P=a.Loc;d(a.Mltop[12],q);var
 l=[248,c("Ascii_syntax.Non_closed_ascii"),b.caml_fresh_oo_id(0)],Y=[0,[4,0,[0,2,3],0,0],c("%03d")],W=c("Expects a single character or a three-digits ascii code."),X=c("interp_ascii_string"),V=c(I),U=c("Ascii interpretation"),S=c(H),T=c(H),Z=c("char_scope");function
 n(a){var
 b=f(g[17][14],j[1][5],a);return d(j[5][4],b)}function

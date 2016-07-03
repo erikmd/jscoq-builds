@@ -1,5 +1,15 @@
 {
   "desc": "cpdt",
   "deps": [ "coq-reals" ],
-  "pkgs": [ { "pkg_id": [ "Cpdt" ], "vo_files": [], "cma_files": [] } ]
+  "pkgs": [
+    {
+      "pkg_id": [ "Cpdt" ],
+      "vo_files": [
+        [ "MoreSpecif.vo", "װ\u001dÙ\u0000²\u0004י€\t˜לרB~" ],
+        [ "DepList.vo", "װ\u001dÙ\u0000²\u0004י€\t˜לרB~" ],
+        [ "CpdtTactics.vo", "װ\u001dÙ\u0000²\u0004י€\t˜לרB~" ]
+      ],
+      "cma_files": []
+    }
+  ]
 }
