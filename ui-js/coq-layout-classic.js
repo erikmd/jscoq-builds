@@ -152,7 +152,7 @@ class CoqLayoutClassic {
     update_goals(str) {
         // TODO: Add diff/history of goals.
         // XXX: should send a message.
-        this.proof.textContent = str;
+        this.proof.innerHTML = str;
     }
 
     // Add a log event received from Coq.

@@ -12,7 +12,8 @@
 
 // Extra stuff:
 
-Array.prototype.last = function() { return this[this.length-1]; };
+Array.prototype.last    = function() { return this[this.length-1]; };
+Array.prototype.flatten = function() { return [].concat.apply([], this); };
 
 /***********************************************************************/
 /* A Provider Container aggregates several containers, the main deal   */
@@ -109,7 +110,6 @@ class ProviderContainer {
         var idx_point = this.snippets.indexOf(this.currentFocus);
         var idx_cur   = this.snippets.indexOf(stm.sp);
 
-        console.log("point vs cur", idx_point, idx_cur);
         return (idx_point < idx_cur);
 
     }
@@ -157,103 +157,126 @@ class CoqManager {
         this.options = {
             mock:    false,
             prelude: true,
+            debug:   true,
             wrapper_id: 'ide-wrapper',
-            base_path:  "../",
-            init_pkgs: ['init'],
+            base_path:  "./",
+            init_pkgs: ['init', 'coq-reals'],
             all_pkgs:  ['init', 'math-comp', 'mtac',
                         'coq-base', 'coq-arith', 'coq-reals',
-                        'coquelicot', 'flocq', 'tlc', 'sf', 'cpdt', 'color', 'relalg', 'unimath',
-                        'plugin-utils', 'extlib', 'mirrorcore']
+                        'coquelicot', 'flocq', 'sf', 'cpdt' ]
+            // Disabled on 8.6
+            // 'coquelicot', 'flocq', 'tlc', 'sf', 'cpdt', 'color', 'relalg', 'unimath',
+            // 'plugin-utils', 'extlib', 'mirrorcore']
         };
 
         this.options = copyOptions(options, this.options);
 
-        // UI setup.
+        // Setup the Coq statement provider.
+        this.provider = this.setupProvider(elems);
+
+        // Setup the Panel UI.
         this.layout = new CoqLayoutClassic(this.options);
 
-        // Setup our providers of Coq statements.
-        this.provider = new ProviderContainer(elems);
-
-        this.provider.onInvalidate = stm => {
-
-            // Clear the last error, XXX it is a bit of a hack.
-            if (this.error && this.error == stm) {
-                this.provider.mark(this.error, "clear");
-                this.error = null;
-                return;
-            } else if (this.error) {
-                // Not the one invalidated, clear and go.
-                this.provider.mark(this.error, "clear");
-                this.error = null;
-            }
-
-            this.goCursor();
-        };
-
-        this.provider.onMouseEnter = stm => {
-            if (stm.coq_sid) {
-                if (this.debug)
-                    console.log("Requested goals info:", this.goals[stm.coq_sid]);
-            } else {
-                console.log("Critical: stm not added (without coq_sid)", stm);
-            }
-        };
-
-        this.provider.onMouseLeave = stm => {
-            if (this.debug)
-                console.log("leave");
-        };
-
+        // Setup the Coq worker.
         this.coq           = new Worker(this.options.base_path + 'coq-js/jscoq_worker.js');
         this.coq.onmessage = evt => this.coq_handler(evt);
 
-        // this.coq1           = new Worker(this.options.base_path + 'coq-js/jscoq_worker.js');
-        // this.coq1.onmessage = evt => this.coq_handler(evt);
-
-        // Keybindings setup
-        // XXX: This should belong to the panel.
-        document.addEventListener('keydown', evt => this.keyHandler(evt));
-
-        // XXX: Depends on the layout.
-        document.getElementById('hide-panel')
-            .addEventListener('click', evt => this.layout.toggle() );
+        this.coq.sendCommand = msg => {
+            if(this.options.debug) {
+                console.log("Posting: ", msg);
+            }
+            this.coq.postMessage(msg);
+        };
 
         // XXX: Only done for the adjustWidth
         // XXX: We should get a reflow-friendly document from Coq.
         this.layout.coq = this.coq;
 
+        // Keybindings setup
+        // XXX: This should go in the panel init.
+        document.addEventListener('keydown', evt => this.keyHandler(evt));
+
+        // XXX: Depends on layout IDs.
+        document.getElementById('hide-panel')
+            .addEventListener('click', evt => this.layout.toggle() );
+
         // Panel setup 2: packages panel.
         // XXX: In the future this may also manage the downloads.
         this.packages = new PackageManager(this.layout.packages, this.options.base_path, this.coq);
+        // Info
+        this.packages.pkg_info = [];
+        // Packages to load
+        this.packages.pkg_init = [];
 
-        // Initial Coq state.
-        this.coq.postMessage(["GetInfo"]);
-
-        // This is a sid-based index of processed statements.
-        this.debug       = false;
-
-        this.sentences   = [];
-        this.stm_id      = [];
-        this.goals       = [];
-
-        this.pending_sentences   = [];
-        this.pqueue      = [];
-
-        this.waitForPkgs = [];
-
-        // Init sentence.
-        this.dummyProvider = { mark : function() {}, getNext: function() { return null; } };
-        this.stm_id[1]     = { text: "dummy sentence", coq_sid: 1, sp: this.dummyProvider };
-        this.sentences     = [this.stm_id[1]];
+        // Pre-init packages
+        this.pre_packages = [];
 
         // Display packages panel:
         var pkg_panel = document.getElementById('packages-panel').parentNode;
         pkg_panel.classList.remove('collapsed');
         this.layout.show();
 
-        // Initialize pkg info.
-        let bp = '../';
-        this.coq.postMessage(["InfoPkg", bp, this.options.all_pkgs]);
+        // Get Coq version, etc...
+        this.coq.sendCommand(["GetInfo"]);
+
+        // This is a sid-based index of processed statements.
+        this.doc = {
+            number_adds:        0,
+            sentences:         [],
+            stm_id:            [],
+            goals:             [],
+            pending_sentences: []
+        };
+
+        // XXX: Initial sentence == hack
+        this.dummyProvider = { mark : function() {}, getNext: function() { return null; } };
+        this.doc.stm_id[1] = { text: "dummy sentence", coq_sid: 1, sp: this.dummyProvider };
+        this.doc.sentences = [this.doc.stm_id[1]];
+
+        // XXX: Hack
+        this.waitForPkgs = [];
+
+        // The fun starts: Load the set of packages.
+        let bp = this.options.base_path + "../coq-pkgs/";
+        this.coq.sendCommand(["InfoPkg", bp, this.options.all_pkgs]);
+    }
+
+    // Provider setup
+    setupProvider(elems) {
+
+        var provider = new ProviderContainer(elems);
+
+        provider.onInvalidate = stm => {
+
+            // Clear the last error, XXX it is a bit of a hack.
+            if (this.error && this.error == stm) {
+                provider.mark(this.error, "clear");
+                this.error = null;
+                return;
+            } else if (this.error) {
+                // Not the one invalidated, clear and go.
+                provider.mark(this.error, "clear");
+                this.error = null;
+            }
+
+            this.goCursor();
+        };
+
+        provider.onMouseEnter = stm => {
+            if (stm.coq_sid) {
+                if (this.options.debug)
+                    console.log("Requested goals info:", this.doc.goals[stm.coq_sid]);
+            } else {
+                console.log("Critical: stm not added (without coq_sid)", stm);
+            }
+        };
+
+        provider.onMouseLeave = stm => {
+            if (this.options.debug)
+                console.log("leave");
+        };
+
+        return provider;
     }
 
     // Feedback Processing
@@ -264,37 +287,50 @@ class CoqManager {
     }
 
     feedFileLoaded(sid, file, mod) {
-        this.layout.log(file + ' loaded succesfully.', 'Info');
+        this.layout.log(file + ' loading.', 'Info');
     }
 
+    // The first state is ready.
     feedProcessed(nsid) {
+
         this.layout.proof.textContent +=
             "\ncoq worker is ready with sid!! " + nsid.toString() +
             "\nPlease, wait for library loading";
 
         this.feedProcessed = this.feedProcessedReady;
 
+        this.enable();
+        this.layout.adjustWidth();
+
     }
 
     feedProcessedReady(nsid) {
 
-        if(this.debug)
+        if(this.options.debug)
             console.log('State processed', nsid);
 
-        // The semantics of the stm here are a bit crazy, it will send
-        // feedback for states that we don't know the id yet.
-        if (! this.stm_id[nsid] ) {
+        // The semantics of the stm here are a bit inconvenient: it
+        // will send `ProcessedReady` feedback message before we the
+        // `Stm.add` call has returned, thus we are not ready to
+        // handle as we don't know of their existance yet. The typical
+        // example is when `Stm.add` forces an observe due to
+        // side-effects.
+        //
+        // We ignore such feedback for now, observe will make it be
+        // resent. However it is possible we would have to queue the
+        // feedback in the future.
+        if (! this.doc.stm_id[nsid] ) {
             console.log('ready but not added?', nsid);
             return;
         }
 
-        var stm = this.stm_id[nsid];
+        var stm = this.doc.stm_id[nsid];
 
         this.provider.mark(stm, "clear");
         this.provider.mark(stm, "ok");
 
         // Get goals
-        this.coq.postMessage(["Goals"]);
+        this.coq.sendCommand(["Goals"]);
 
         // if(update_focus)
         //     this.provider.cursorToEnd(next);
@@ -302,7 +338,7 @@ class CoqManager {
     }
 
     // Simplifier to the "rich" format coq uses.
-    flatMsg(msg) {
+    richpp2HTML(msg) {
 
         // Elements are ...
         if (msg.constructor !== Array) {
@@ -318,8 +354,9 @@ class CoqManager {
         // Element(tag_of_element, att (single string), list of xml)
         case "Element":
             [id, att, m] = ct;
-            let imm = m.map(this.flatMsg, this);
+            let imm = m.map(this.richpp2HTML, this);
             ret = "".concat(...imm);
+            ret = `<span class="${id}">` + ret + `</span>`;
             break;
 
         // PCData contains a string
@@ -333,34 +370,50 @@ class CoqManager {
         return ret;
     }
 
+    // compatibility with 8.5
+    feedErrorMsg(sid, loc, msg) {
+
+        this.feedMessage(sid, ['Error'], [loc], msg);
+
+    }
+
+    // Error handler.
+    handleError(sid) {
+
+        let err_stm;
+
+        // Error on add or in added stm ?
+        if (sid < 0) {
+            err_stm = this.doc.pending_sentences[0];
+            // XXX; hack
+            this.error = err_stm;
+        } else {
+            err_stm = this.doc.stm_id[sid];
+            this.error = err_stm;
+            this.coqCancelled([sid]);
+        }
+        // this.provider.mark(err_stm, "clear");
+        this.provider.mark(err_stm, "error");
+
+        this.doc.pending_sentences = [];
+    }
+
     feedMessage(sid, lvl, loc, msg) {
 
-        var fmsg = this.flatMsg(msg);
+        var fmsg = this.richpp2HTML(msg);
+
         // Coq lvl
         var lvl  = lvl[0];
 
-        if(this.debug)
-            console.log(sid, lvl, loc, fmsg);
+        if(this.options.debug)
+            console.log('Msg', sid, lvl, loc, fmsg);
 
         this.layout.log(fmsg, lvl);
 
+        // XXX: highlight location.
+
         if (lvl === 'Error') {
-
-            let err_stm;
-
-            // Error on add or in added stm ?
-            if (sid < 0) {
-                err_stm = this.pending_sentences[0];
-                // XXX; hack
-                this.error = err_stm;
-            } else {
-                err_stm = this.sentences.last();
-            }
-            this.provider.mark(err_stm, "clear");
-            this.provider.mark(err_stm, "error");
-
-            this.pending_sentences = [];
-            this.pqueue = [];
+            handleError(sid, loc, msg);
         }
     }
 
@@ -380,34 +433,38 @@ class CoqManager {
 
     process_pending(sid) {
 
-        var stm      = this.pending_sentences[0];
-        this.coq.postMessage(["Add", sid, -1, stm.text]);
+        var stm      = this.doc.pending_sentences[0];
+        this.coq.sendCommand(["Add", sid, -1, stm.text]);
 
     }
 
     add_pending(stm) {
-        if(this.pending_sentences.length) {
-            this.pending_sentences.push(stm);
+        if(this.doc.pending_sentences.length) {
+            this.doc.pending_sentences.push(stm);
         } else {
-            var stm_last = this.sentences.last();
+            var stm_last = this.doc.sentences.last();
 
-            this.pending_sentences.push(stm);
-            this.coq.postMessage(["Add", stm_last.coq_sid, -1, stm.text]);
+            this.doc.pending_sentences.push(stm);
+            this.coq.sendCommand(["Add", stm_last.coq_sid, -1, stm.text]);
         }
     }
 
     coqAdded(nsid) {
 
-        if(this.debug)
+        if(this.options.debug)
             console.log('adding: ', nsid);
 
         // Added by Coq !!
-        let cur_stm = this.pending_sentences.shift();
-        this.sentences.push(cur_stm);
-        this.stm_id[nsid] = cur_stm;
+        let cur_stm = this.doc.pending_sentences.shift();
+        this.doc.sentences.push(cur_stm);
+        this.doc.stm_id[nsid] = cur_stm;
         cur_stm.coq_sid   = nsid;
 
-        if(this.pending_sentences.length) {
+        // Avoid stack overflows by doing a commit every 2^5 sentences.
+        if( !(this.doc.number_adds++ % 128) )
+            this.coq.sendCommand(['Observe', nsid]);
+
+        if(this.doc.pending_sentences.length) {
 
             this.process_pending(nsid);
             return;
@@ -416,25 +473,28 @@ class CoqManager {
             // [Modulo the same old bugs, we need a position comparison op]
             // We have reached the destination...
             if (this.provider.getAtPoint() || this.provider.afterPoint(cur_stm) ) {
-                this.coq.postMessage(['Commit', nsid]);
+                this.coq.sendCommand(['Observe', nsid]);
             } else {
                 this.goNext(false);
             }
         } else {
-            this.coq.postMessage(['Commit', nsid]);
+            this.coq.sendCommand(['Observe', nsid]);
         }
     }
 
     // Gets a list of cancelled sids.
     coqCancelled(sids) {
 
+        if(this.options.debug)
+            console.log('cancelling', sids);
+
         sids.forEach(function (sid) {
 
-            let stm_to_cancel = this.stm_id[sid];
-            let stm_idx       = this.sentences.indexOf(stm_to_cancel);
+            let stm_to_cancel = this.doc.stm_id[sid];
+            let stm_idx       = this.doc.sentences.indexOf(stm_to_cancel);
 
-            this.stm_id[sid] = null;
-            this.sentences.splice(stm_idx, 1);
+            this.doc.stm_id[sid] = null;
+            this.doc.sentences.splice(stm_idx, 1);
 
             this.provider.mark(stm_to_cancel, "clear");
 
@@ -442,32 +502,40 @@ class CoqManager {
 
         // Update goalsa
 
-        this.layout.update_goals(this.goals[this.sentences.last().coq_sid]);
+        this.layout.update_goals(this.doc.goals[this.doc.sentences.last().coq_sid]);
     }
 
     coqGoalInfo(sid, goals) {
-        this.goals[sid] = goals;
+
+        var hgoals = this.richpp2HTML(goals);
+        this.doc.goals[sid] = hgoals;
 
         // XXX this doesn't work propertly
-        if (!this.pending_sentences.length)
-            this.layout.update_goals(goals);
+        if (!this.doc.pending_sentences.length)
+            this.layout.update_goals(hgoals);
     }
 
     coqLog(level, msg) {
 
-        if (this.debug) console.log(msg, level[0]);
+        if (this.options.debug) console.log(msg, level[0]);
 
         this.layout.log(msg, level[0]);
     }
 
     coqLibInfo(bname, bi) {
-        this.packages.addBundleInfo(bname, bi);
 
-        // Init list processing
+        this.packages.addBundleInfo(bname, bi);
+        this.packages.pkg_info[bname] = bi;
+
+        // Check if we want to load this package.
         var rem_pkg = this.options.init_pkgs;
         var idx = rem_pkg.indexOf(bname);
+
+        // Worker path is coq-js.
+        let bp = this.options.base_path + "../coq-pkgs/";
+
         if(idx > -1) {
-            this.coq.postMessage(['LoadPkg', bname]);
+            this.coq.sendCommand(['LoadPkg', bp, bname]);
         }
     }
 
@@ -481,10 +549,13 @@ class CoqManager {
 
         var rem_pkg = this.options.init_pkgs;
         var idx = rem_pkg.indexOf(bname);
+
         if(idx > -1) {
 
+            this.packages.pkg_init.push(bname);
             rem_pkg.splice(idx, 1);
 
+            // All the packages have been loaded.
             if (rem_pkg.length === 0)
                 this.coqInit();
         }
@@ -522,12 +593,21 @@ class CoqManager {
             "===> Loaded packages [" + this.options.init_pkgs.join(', ') + "] \n";
 
         // XXXXXX: Critical point
-        if (this.options.prelude) {
+        var load_lib = [];
+        var init_lib = this.options.init_pkgs;
 
-            var prelude_stm = { text: "Require Import Coq.Init.Prelude.", sp: this.dummyProvider };
-            this.add_pending(prelude_stm);
+        if (this.options.prelude) {
+            load_lib.push(["Coq", "Init", "Prelude"]);
         }
-        this.enable();
+
+        let bp = this.options.base_path + "../";
+
+        let load_paths = this.packages.pkg_init.map(
+            bundle => this.packages.pkg_info[bundle].pkgs
+        ).flatten().map( pkg => pkg.pkg_id );
+
+        this.coq.sendCommand(["Init", load_lib, load_paths]);
+        // Done!
     };
 
     coq_handler(evt) {
@@ -535,7 +615,7 @@ class CoqManager {
         var msg     = evt.data;
         var msg_tag = msg[0];
 
-        if(this.debug)
+        if(this.options.debug)
             console.log("coq_evt", msg);
 
         // We call the corresponding coq$msg_tag(msg[1]..msg[n])
@@ -551,29 +631,29 @@ class CoqManager {
 
     goPrev(inPlace) {
 
-        if (this.pending_sentences.length)
+        if (this.doc.pending_sentences.length)
             return;
 
-            // If we didn't load the prelude, prevent unloading it to
+        // If we didn't load the prelude, prevent unloading it to
         // workaround a bug in Coq.
-        if (!this.options.prelude && this.sentences.length <= 1) return;
+        if (!this.options.prelude && this.doc.sentences.length <= 1) return;
 
         if (this.error) {
             this.provider.mark(this.error, "clear");
             this.error = null;
         }
 
-        var stm      = this.sentences.last();
+        var stm      = this.doc.sentences.last();
 
         if(!inPlace)
             this.provider.cursorToStart(stm);
 
         // Tell coq to go back to the old state.
-        let sid_old  = stm.coq_sid;
-        stm.coq_sid          = null;
-        this.goals[sid_old]  = null;
+        let sid_old              = stm.coq_sid;
+        stm.coq_sid              = null;
+        this.doc.goals[sid_old]  = null;
 
-        this.coq.postMessage(['Cancel', sid_old]);
+        this.coq.sendCommand(['Cancel', sid_old]);
     }
 
     // Return if we had success.
@@ -581,10 +661,10 @@ class CoqManager {
 
         var cur_stm;
 
-        if (this.pending_sentences.length > 0)
-            cur_stm = this.pending_sentences.last();
+        if (this.doc.pending_sentences.length > 0)
+            cur_stm = this.doc.pending_sentences.last();
         else
-            cur_stm = this.sentences.last();
+            cur_stm = this.doc.sentences.last();
 
         var next = this.provider.getNext(cur_stm);
 
@@ -622,11 +702,11 @@ class CoqManager {
 
             if(!cur.coq_sid) {
                 console.log("critical error, stm not registered");
+            } else {
+                this.coq.sendCommand(['Cancel', cur.coq_sid]);
             }
-
-            this.coq.postMessage(['Cancel', cur.coq_sid]);
-
         } else {
+
             this.goTarget = true;
             this.goNext(false);
         }
@@ -652,11 +732,11 @@ class CoqManager {
         this.coq.edit(initial_sid);
 
         // Reset out sentences
-        this.sentences.forEach(function(stm) {
+        this.doc.sentences.forEach(function(stm) {
             this.provider.mark(stm, "clear");
         }, this);
 
-        this.sentences = [];
+        this.doc.sentences = [];
 
     }
 

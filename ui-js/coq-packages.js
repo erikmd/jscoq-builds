@@ -45,7 +45,10 @@ class PackageManager {
     startPackageDownload() {
 
         var row = d3.select(d3.event.target.parentNode);
-        this.coq.postMessage(["LoadPkg", row.datum().desc]);
+        debugger;
+
+        let bp = this.base_path + "../coq-pkgs/";
+        this.coq.sendCommand(["LoadPkg", bp, row.datum().desc]);
 
     }
 
